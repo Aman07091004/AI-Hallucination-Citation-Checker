@@ -84,6 +84,46 @@ def _looks_like_noise(citation: str) -> bool:
     return any(w.lower() in _NOISE_WORDS for w in words)
 
 
+def get_citation_context(text: str, char_offset: int, window: int = 350) -> str:
+    """Returns the text surrounding a citation - this is what a brief
+    actually CLAIMS the case says, which is what we'll check against the
+    real case text during proposition verification. We look mostly
+    backwards from the citation since UK legal writing typically states
+    the proposition first, then cites authority for it immediately after -
+    e.g. '...inducing a breach of contract is itself an actionable tort,
+    as established in Lumley v Gye (1853) 2 E&B 216.'
+
+    We strip a couple of known noise patterns before returning: broken
+    Word cross-reference fields (e.g. 'Error! Unknown document property
+    name.') that leaked into the PDF text and would otherwise pollute the
+    embedding/BM25 query with irrelevant tokens."""
+    start = max(0, char_offset - window)
+    end = min(len(text), char_offset + 40)
+    raw = text[start:end]
+    raw = raw.replace("Error! Unknown document property name.", " ")
+    return _normalize_whitespace(raw)
+
+
+def strip_self_reference(context: str, case_name: str, citation: str) -> str:
+    """Removes the case name and citation string from a context snippet
+    before it's used as a search query.
+
+    Why this matters: our context snippet is built by looking backwards
+    from the citation itself, so it naturally still contains the case name
+    and citation text. If we search using that as-is, BM25 will often just
+    find whichever chunk repeats that same citation string most exactly -
+    typically a case's own title/header page - rather than the chunk that
+    actually supports the legal claim being made. That's not a genuine
+    proposition check, it's closer to search leaking its own answer key.
+    Stripping these out forces retrieval to work on the substance of the
+    claim alone."""
+    cleaned = context
+    for token in (citation, case_name):
+        if token:
+            cleaned = cleaned.replace(token, " ")
+    return _normalize_whitespace(cleaned)
+
+
 def dedupe_citations(citations: list[ExtractedCitation]) -> list[ExtractedCitation]:
     """A brief often cites the same case twice - once with full reasoning in
     the body, once in a reference table (e.g. this brief's 'Citation Index').
