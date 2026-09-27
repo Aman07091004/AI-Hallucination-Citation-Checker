@@ -14,8 +14,6 @@ _CITATION_PATTERNS = [
 ]
 _CITATION_RE = re.compile("|".join(f"(?:{p})" for p in _CITATION_PATTERNS))
 
-# Case name immediately before a citation, e.g. "OBG Ltd v Allan " or
-# "Transfield Shipping Inc v Mercator Shipping Inc (The Achilleas) "
 _CASE_NAME_RE = re.compile(
     r"([A-Z][A-Za-z0-9&.,'\-]*(?:\s+[A-Za-z0-9&.,'\-]+){0,8}"  # party 1 (up to ~9 words)
     r"\s+v\.?\s+"                                              # " v " or " v. "
@@ -26,9 +24,7 @@ _CASE_NAME_RE = re.compile(
 _LOOKBACK_WINDOW = 120  # chars to search before a citation for the case name
 
 # Strips lead-in phrases like "House of Lords in ", "Crestholm relies upon ",
-# "Court of Queen's Bench in " so only the actual case name remains. We take
-# the LAST such connector before a capital letter, since case names
-# themselves are sometimes preceded by court/procedural framing text.
+# "Court of Queen's Bench in " so only the actual case name remains.
 _LEADIN_RE = re.compile(r".*\b(?:in|upon)\s+(?=[A-Z])", re.IGNORECASE | re.DOTALL)
 
 
@@ -46,7 +42,7 @@ def _clean_case_name(raw: str) -> str:
 class ExtractedCitation:
     case_name: str
     citation: str
-    char_offset: int  # position of the citation in the source text, for later grounding
+    char_offset: int  # position of the citation in the source text
 
 
 def extract_citations(text: str) -> list[ExtractedCitation]:
@@ -74,8 +70,8 @@ def extract_citations(text: str) -> list[ExtractedCitation]:
 
 
 # Words that occasionally get swallowed into a citation match when a PDF's
-# table layout (e.g. a "Citation Index" appendix) collapses into run-on text
-# with irregular spacing. None of these are real court/report abbreviations.
+# table layout collapses into run-on text
+# with irregular spacing.
 _NOISE_WORDS = {"ground", "page", "note", "ref", "ยง"}
 
 
