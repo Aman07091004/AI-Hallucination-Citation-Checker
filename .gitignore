@@ -5,6 +5,8 @@ __pycache__/
 .env
 data/raw_corpus/*
 !data/raw_corpus/.gitkeep
+!data/raw_corpus/*.pdf
+!data/raw_corpus/*.docx
 data/processed/*
 !data/processed/.gitkeep
 .pytest_cache/
