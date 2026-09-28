@@ -9,6 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
+# torch (pulled in by sentence-transformers) defaults to the full CUDA build
+# on Linux even though this container has no GPU - installing the CPU-only
+# wheel first, before the rest of requirements.txt, keeps pip from pulling
+# the much larger CUDA variant. This matters a lot on a memory-constrained
+# host (Render's free tier is 512MB).
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/

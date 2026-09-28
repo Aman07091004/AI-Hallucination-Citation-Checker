@@ -12,3 +12,5 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         value: https://aman07091004.github.io
+      - key: WARM_MODEL_ON_START
+        value: "false"  # free tier is memory-constrained - load the embedding model lazily, not eagerly at every boot
