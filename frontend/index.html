@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Citation Integrity Checker</title>
+<meta name="description" content="Paste or upload a legal document. Every case and statute it cites is checked: does it exist, and does it say what the document claims?">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#9878;&#65039;</text></svg>">
+<style>
+  :root {
+    --paper: #F5F4EF;
+    --paper-raised: #FBFAF7;
+    --ink: #1C1B19;
+    --ink-soft: #514E48;
+    --navy: #1F3A5C;
+    --rule: #DAD6C9;
+    --supported: #2F6B4F;  --supported-bg: #E7F0EA;
+    --misquoted: #A3661E;  --misquoted-bg: #F5EBDA;
+    --fabricated: #A13A2E; --fabricated-bg: #F5E4E1;
+    --uncertain: #55606B;  --uncertain-bg: #E7E9EA;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #1A1917; --paper-raised: #221F1C; --ink: #EDEAE3; --ink-soft: #B4AFA5;
+      --navy: #7FA4CE; --rule: #3A362F;
+      --supported: #6FBE93;  --supported-bg: #1E2F26;
+      --misquoted: #D69A52;  --misquoted-bg: #332619;
+      --fabricated: #E08072; --fabricated-bg: #35211E;
+      --uncertain: #A9B2BB;  --uncertain-bg: #2B2D2F;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: 'Public Sans', -apple-system, sans-serif; line-height: 1.55;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  a { color: var(--navy); }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* category colour tokens, shared by highlights, cards, chips and bars */
+  .c-verified   { --fg: var(--supported);  --bg: var(--supported-bg); }
+  .c-misapplied { --fg: var(--misquoted);  --bg: var(--misquoted-bg); }
+  .c-fabricated { --fg: var(--fabricated); --bg: var(--fabricated-bg); }
+  .c-unresolved, .c-pending { --fg: var(--uncertain); --bg: var(--uncertain-bg); }
+
+  header.masthead { max-width: 46rem; margin-bottom: 2rem; }
+  h1 {
+    font-family: 'Newsreader', Georgia, serif; font-weight: 500;
+    font-size: clamp(2rem, 4.6vw, 2.8rem); letter-spacing: -0.01em; line-height: 1.12; margin: 0 0 0.7rem;
+  }
+  .tagline { font-size: 1.08rem; color: var(--ink-soft); margin: 0; }
+
+  /* ---- input ---- */
+  .input-card { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 3px; padding: 1.1rem; }
+  .input-card.dragging { border-color: var(--navy); background: var(--supported-bg); }
+  textarea {
+    width: 100%; min-height: 12rem; resize: vertical; padding: 0.9rem 1rem;
+    border: 1px solid var(--rule); border-radius: 3px; background: var(--paper); color: var(--ink);
+    font-family: 'Newsreader', Georgia, serif; font-size: 1.05rem; line-height: 1.6;
+  }
+  textarea:disabled { opacity: 0.55; }
+  .input-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.8rem; }
+  .btn {
+    border: 1px solid var(--rule); background: transparent; color: var(--ink);
+    padding: 0.5rem 0.95rem; border-radius: 3px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--ink-soft); }
+  .btn.primary { background: var(--navy); border-color: var(--navy); color: var(--paper); font-weight: 600; margin-left: auto; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.primary:disabled { opacity: 0.55; cursor: default; filter: none; }
+  .btn.link { border: none; padding: 0.5rem 0.3rem; color: var(--navy); text-decoration: underline; }
+  .file-chip {
+    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+    background: var(--uncertain-bg); border-radius: 3px; font-size: 0.92rem;
+  }
+  .file-chip button { border: none; background: none; cursor: pointer; color: var(--ink-soft); font-size: 1.1rem; line-height: 1; padding: 0 0.3rem; }
+  .fineprint { font-size: 0.85rem; color: var(--ink-soft); margin: 0.9rem 0 0; }
+
+  .banner { border: 1px solid var(--rule); border-left: 3px solid var(--misquoted); background: var(--misquoted-bg);
+            padding: 0.7rem 1rem; border-radius: 3px; margin: 1rem 0 0; font-size: 0.95rem; }
+  .banner.error { border-left-color: var(--fabricated); background: var(--fabricated-bg); }
+
+  /* ---- results ---- */
+  #results { margin-top: 2.5rem; }
+  .status-line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.95rem; color: var(--ink-soft); }
+  .progress { height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; margin: 0.5rem 0 1.6rem; }
+  .progress > div { height: 100%; background: var(--navy); width: 0; transition: width 0.4s ease; }
+  @media (prefers-reduced-motion: reduce) { .progress > div { transition: none; } }
+
+  .summary { margin-bottom: 2rem; }
+  .health-bar { display: flex; height: 12px; border-radius: 2px; overflow: hidden; background: var(--rule); }
+  .health-bar > span { display: block; background: var(--fg); }
+  .health-bar > span.c-pending { background: repeating-linear-gradient(45deg, var(--rule), var(--rule) 4px, transparent 4px, transparent 8px); }
+  .tally { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+  .tally-item { border: 1px solid var(--rule); border-radius: 3px; padding: 0.6rem 0.9rem; flex: 1 1 130px; }
+  .tally-num { font-family: 'Newsreader', serif; font-size: 1.7rem; line-height: 1; color: var(--fg); }
+  .tally-label { font-size: 0.85rem; color: var(--ink-soft); margin-top: 0.25rem; }
+
+  .columns { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+  @media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+  h2 { font-family: 'Newsreader', serif; font-weight: 500; font-size: 1.3rem; margin: 0 0 0.3rem; }
+  .pane-hint { font-size: 0.88rem; color: var(--ink-soft); margin: 0 0 0.9rem; }
+
+  .doc {
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 3px; padding: 1.4rem 1.5rem;
+    font-family: 'Newsreader', Georgia, serif; font-size: 1.06rem; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  mark.cite {
+    color: inherit; background: var(--bg); border-bottom: 2px solid var(--fg); padding: 0 0.12em; border-radius: 2px; cursor: pointer;
+  }
+  mark.cite.shallow { border-bottom-style: dotted; }
+  mark.cite.c-pending { background: transparent; border-bottom: 2px dashed var(--fg); }
+  mark.cite.selected { outline: 2px solid var(--navy); outline-offset: 2px; }
+
+  .cards-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 0.6rem; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .seg button { border: none; background: transparent; color: var(--ink-soft); padding: 0.3rem 0.65rem; cursor: pointer; font-size: 0.85rem; }
+  .seg button[aria-pressed="true"] { background: var(--navy); color: var(--paper); }
+  .cards { display: grid; gap: 0.7rem; }
+  @media (min-width: 901px) { .cards-col { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; padding-right: 4px; } }
+
+  .card { background: var(--paper-raised); border: 1px solid var(--rule); border-left: 3px solid var(--fg); border-radius: 3px; padding: 0.85rem 1rem; }
+  .card.selected { outline: 2px solid var(--navy); outline-offset: 1px; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; cursor: pointer; }
+  .card-name { font-family: 'Newsreader', serif; font-style: italic; font-size: 1.05rem; line-height: 1.3; }
+  .card-name.legis { font-style: normal; }
+  .card-cite { font-size: 0.85rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .chip { flex-shrink: 0; font-size: 0.78rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 3px; color: var(--fg); background: var(--bg); white-space: nowrap; }
+  .conf { display: flex; align-items: center; gap: 0.6rem; margin: 0.7rem 0 0.5rem; font-size: 0.85rem; color: var(--ink-soft); }
+  .conf-bar { flex: 1; height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+  .conf-bar > div { height: 100%; background: var(--fg); }
+  .conf strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .card p { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .card p.note { color: var(--ink-soft); font-size: 0.86rem; }
+  details { font-size: 0.9rem; }
+  details summary { cursor: pointer; color: var(--navy); }
+  details blockquote { margin: 0.5rem 0 0; padding-left: 0.8rem; border-left: 2px solid var(--rule); color: var(--ink-soft); font-family: 'Newsreader', serif; font-size: 0.95rem; }
+  .checking { color: var(--ink-soft); font-size: 0.9rem; margin: 0.6rem 0 0; }
+
+  .empty { color: var(--ink-soft); border: 1px dashed var(--rule); border-radius: 3px; padding: 1.2rem; }
+  footer { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); font-size: 0.88rem; color: var(--ink-soft); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>Does this case actually say that?</h1>
+    <p class="tagline">Paste or upload a brief, contract or memo. Every case and statute it cites is checked: does it exist, and does it say what the document claims?</p>
+  </header>
+
+  <div id="server-banner" class="banner" hidden></div>
+
+  <section class="input-card" id="input-card" aria-label="Document to check">
+    <textarea id="text-input" placeholder="Paste the text of a legal document here"></textarea>
+    <div class="input-actions">
+      <input type="file" id="file-input" accept=".pdf,.docx,.txt" hidden>
+      <button type="button" class="btn" id="upload-btn">Upload a file</button>
+      <span class="file-chip" id="file-chip" hidden><span id="file-name"></span><button type="button" id="file-clear" aria-label="Remove file">&times;</button></span>
+      <button type="button" class="btn link" id="sample-btn">Try a sample paragraph</button>
+      <button type="button" class="btn primary" id="check-btn">Check citations</button>
+    </div>
+    <p class="fineprint" id="fineprint">PDF, Word or text files. Short excerpts around each citation are sent to Perplexity to be checked, so don't use confidential documents.</p>
+  </section>
+
+  <div id="error-banner" class="banner error" role="alert" hidden></div>
+  <div id="warning-list"></div>
+
+  <section id="results" hidden aria-label="Results">
+    <div class="status-line" aria-live="polite"><span id="status-text"></span><span id="status-count"></span></div>
+    <div class="progress" id="progress"><div id="progress-bar"></div></div>
+
+    <div class="summary" id="summary" hidden>
+      <div class="health-bar" id="health-bar" role="img" aria-label="Share of authorities in each category"></div>
+      <div class="tally" id="tally"></div>
+    </div>
+
+    <div class="columns">
+      <div>
+        <h2>Your document</h2>
+        <p class="pane-hint">Highlights show what was found. Select one to see its verdict. A dotted underline means only existence could be checked.</p>
+        <div class="doc" id="doc"></div>
+      </div>
+      <div class="cards-col">
+        <div class="cards-head">
+          <h2>Authorities</h2>
+          <div class="seg" role="group" aria-label="Sort authorities">
+            <button type="button" id="sort-flagged" aria-pressed="true">Flagged first</button>
+            <button type="button" id="sort-order" aria-pressed="false">In document order</button>
+          </div>
+        </div>
+        <div class="cards" id="cards"></div>
+        <p style="margin-top:1rem"><button type="button" class="btn" id="download-btn" hidden>Download report (JSON)</button></p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Citation Integrity Checker</span>
+    <span id="footer-corpus"></span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+const API = (window.API_BASE || "").replace(/\/$/, "");
+const POLL_MS = window.POLL_MS || 1000;
+
+const SAMPLE = `Damages for breach of contract are limited to losses that were reasonably foreseeable when the contract was made. This rule derives from Hadley v Baxendale (1854) 9 Ex 341. The claimant also relies on American Cyanamid Co v Ethicon Ltd [1975] AC 396, which held that a claimant seeking an interim injunction must first prove that it will succeed at trial on the balance of probabilities.
+
+Reliance is further placed on Harrowgate Freight Ltd v Alden Marine plc [2020] EWHC 2231 (Comm) for the proposition that such losses are recoverable in full. The court's power to grant the injunction sought arises under section 37 of the Senior Courts Act 1981, and the claimant says the Commercial Contracts Transparency Act 2017 reinforces the point.`;
+
+const CATEGORY_ORDER = ["fabricated", "misapplied", "unresolved", "verified"];
+const CATEGORY_LABEL = { verified: "Verified", misapplied: "Misapplied", fabricated: "Fabricated", unresolved: "Needs review" };
+
+const $ = (sel) => document.querySelector(sel);
+
+/** Builds a DOM element. Text children go in as text nodes - never parsed as HTML,
+ *  because both the document and the model's explanations are untrusted input. */
+function el(tag, props = {}, ...kids) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (value === false || value == null) continue;
+    if (key === "class") node.className = value;
+    else if (key === "dataset") Object.assign(node.dataset, value);
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    node.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return node;
+}
+
+const state = { file: null, runToken: 0, job: null, selectedId: null, sort: "flagged", lastSignature: "" };
+
+function categoryOf(c) { return c.status === "done" ? c.category : "pending"; }
+function isShallow(c) { return c.status === "done" && c.category === "verified" && c.depth === "existence_only"; }
+
+function chipLabel(c) {
+  if (c.status !== "done") return "Checking";
+  if (isShallow(c)) return "Verified (existence only)";
+  return CATEGORY_LABEL[c.category] || "Needs review";
+}
+
+/* ---------------- input handling ---------------- */
+
+function setFile(file) {
+  state.file = file;
+  $("#file-chip").hidden = !file;
+  $("#file-name").textContent = file ? file.name : "";
+  $("#text-input").disabled = !!file;
+  if (!file) $("#file-input").value = "";
+}
+
+$("#upload-btn").addEventListener("click", () => $("#file-input").click());
+$("#file-input").addEventListener("change", (e) => setFile(e.target.files[0] || null));
+$("#file-clear").addEventListener("click", () => setFile(null));
+$("#sample-btn").addEventListener("click", () => { setFile(null); $("#text-input").value = SAMPLE; });
+
+const card = $("#input-card");
+["dragenter", "dragover"].forEach((t) => card.addEventListener(t, (e) => { e.preventDefault(); card.classList.add("dragging"); }));
+["dragleave", "drop"].forEach((t) => card.addEventListener(t, (e) => { e.preventDefault(); card.classList.remove("dragging"); }));
+card.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+
+function showError(message) {
+  const box = $("#error-banner");
+  box.textContent = message;
+  box.hidden = !message;
+}
+
+async function readError(response) {
+  try { return (await response.json()).detail || `Request failed (${response.status}).`; }
+  catch { return `Request failed (${response.status}).`; }
+}
+
+$("#check-btn").addEventListener("click", async () => {
+  showError("");
+  const text = $("#text-input").value;
+  if (!state.file && !text.trim()) { showError("Paste some text or upload a file to check."); return; }
+
+  const button = $("#check-btn");
+  button.disabled = true;
+  button.textContent = "Checking…";
+  const token = ++state.runToken;
+
+  try {
+    let response;
+    if (state.file) {
+      const form = new FormData();
+      form.append("file", state.file);
+      response = await fetch(`${API}/api/verify/file`, { method: "POST", body: form });
+    } else {
+      response = await fetch(`${API}/api/verify/text`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+      });
+    }
+    if (!response.ok) throw new Error(await readError(response));
+    const { job_id } = await response.json();
+
+    state.job = null; state.selectedId = null; state.lastSignature = "";
+    $("#results").hidden = false;
+    $("#doc").replaceChildren(); $("#cards").replaceChildren();
+    $("#summary").hidden = true; $("#download-btn").hidden = true;
+    $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
+    await poll(job_id, token);
+  } catch (err) {
+    showError(err.message || "Could not reach the server.");
+  } finally {
+    if (token === state.runToken) { button.disabled = false; button.textContent = "Check citations"; }
+  }
+});
+
+async function poll(jobId, token) {
+  let failures = 0;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    if (token !== state.runToken) return;   // a newer check replaced this one
+    try {
+      const response = await fetch(`${API}/api/jobs/${jobId}`);
+      if (response.status === 404) { showError("This check expired. Start a new one."); return; }
+      if (!response.ok) throw new Error(String(response.status));
+      failures = 0;
+      const job = await response.json();
+      render(job);
+      if (job.status === "done" || job.status === "error") return;
+    } catch {
+      if (++failures >= 5) { showError("Lost the connection to the server. The check may still be running; try again in a moment."); return; }
+    }
+  }
+}
+
+/* ---------------- rendering ---------------- */
+
+function render(job) {
+  state.job = job;
+  const signature = JSON.stringify([job.status, job.stage, job.done, job.total, job.error, job.warnings]);
+  if (signature === state.lastSignature) return;
+  state.lastSignature = signature;
+
+  renderStatus(job);
+  renderWarnings(job);
+  if (job.error) showError(job.error);
+  if (job.text != null) {
+    renderSummary(job);
+    renderDocument(job);
+    renderCards(job);
+    $("#download-btn").hidden = job.status !== "done";
+  }
+}
+
+function renderStatus(job) {
+  const finished = job.status === "done" || job.status === "error";
+  $("#status-text").textContent = job.status === "error" ? "Stopped" : job.stage;
+  $("#status-count").textContent = job.total ? `${job.done} of ${job.total} checked` : "";
+  $("#progress").hidden = finished;
+  $("#progress-bar").style.width = job.total ? `${(job.done / job.total) * 100}%` : "6%";
+}
+
+function renderWarnings(job) {
+  $("#warning-list").replaceChildren(...(job.warnings || []).map((w) => el("div", { class: "banner" }, w)));
+}
+
+function renderSummary(job) {
+  const total = job.citations.length;
+  $("#summary").hidden = total === 0;
+  if (!total) return;
+
+  const counts = job.summary;
+  const bar = $("#health-bar");
+  bar.replaceChildren(...["verified", "misapplied", "fabricated", "unresolved", "pending"]
+    .filter((k) => counts[k] > 0)
+    .map((k) => el("span", { class: `c-${k}`, style: `width:${(counts[k] / total) * 100}%`, title: `${counts[k]} ${k}` })));
+
+  $("#tally").replaceChildren(...["verified", "misapplied", "fabricated", "unresolved"].map((k) =>
+    el("div", { class: `tally-item c-${k}` },
+      el("div", { class: "tally-num" }, counts[k]),
+      el("div", { class: "tally-label" }, CATEGORY_LABEL[k]))));
+}
+
+function renderDocument(job) {
+  const box = $("#doc");
+  const text = job.text || "";
+  const marks = [];
+  for (const c of job.citations) {
+    for (const [start, end] of c.spans) {
+      if (start >= 0 && end > start && end <= text.length) marks.push({ start, end, c });
+    }
+  }
+  marks.sort((a, b) => a.start - b.start);
+
+  const nodes = [];
+  let pos = 0;
+  for (const m of marks) {
+    if (m.start < pos) continue;   // overlapping span - keep the earlier one
+    if (m.start > pos) nodes.push(text.slice(pos, m.start));
+    nodes.push(el("mark", {
+      class: `cite c-${categoryOf(m.c)}${isShallow(m.c) ? " shallow" : ""}${m.c.id === state.selectedId ? " selected" : ""}`,
+      dataset: { id: m.c.id }, tabindex: "0", role: "button",
+      "aria-label": `${m.c.name}: ${chipLabel(m.c)}`,
+    }, text.slice(m.start, m.end)));
+    pos = m.end;
+  }
+  nodes.push(text.slice(pos));
+  box.replaceChildren(...nodes.map((n) => (typeof n === "string" ? document.createTextNode(n) : n)));
+}
+
+function sortedCitations(job) {
+  const list = [...job.citations];
+  if (state.sort === "flagged") {
+    const rank = (c) => (c.status === "done" ? CATEGORY_ORDER.indexOf(c.category) : CATEGORY_ORDER.length);
+    list.sort((a, b) => rank(a) - rank(b) || a.id - b.id);
+  }
+  return list;
+}
+
+function safeLink(source) {
+  if (typeof source === "string" && /^https?:\/\//i.test(source)) {
+    return el("a", { href: source, target: "_blank", rel: "noopener noreferrer" }, source);
+  }
+  return source;
+}
+
+function renderCards(job) {
+  const container = $("#cards");
+  if (!job.citations.length) {
+    container.replaceChildren(job.status === "done"
+      ? el("div", { class: "empty" }, "No case citations or statutes were found in this document. Citations need a recognisable UK format, such as ",
+          el("em", {}, "Hadley v Baxendale (1854) 9 Ex 341"), " or ", el("em", {}, "Senior Courts Act 1981"), ".")
+      : el("div", { class: "empty" }, "Looking for citations…"));
+    return;
+  }
+
+  container.replaceChildren(...sortedCitations(job).map((c) => {
+    const cat = categoryOf(c);
+    const done = c.status === "done";
+    const evidence = c.evidence || {};
+
+    return el("article", { class: `card c-${cat}${c.id === state.selectedId ? " selected" : ""}`, dataset: { id: c.id }, id: `card-${c.id}` },
+      el("div", { class: "card-top", dataset: { select: c.id } },
+        el("div", {},
+          el("div", { class: `card-name${c.kind === "legislation" ? " legis" : ""}` }, c.name),
+          c.citation !== c.name ? el("div", { class: "card-cite" }, c.citation) : null),
+        el("span", { class: "chip" }, chipLabel(c))),
+      done ? el("div", { class: "conf" }, "Confidence",
+        el("div", { class: "conf-bar", role: "img", "aria-label": `${c.confidence_pct} percent` }, el("div", { style: `width:${c.confidence_pct}%` })),
+        el("strong", {}, `${c.confidence_pct}%`)) : el("p", { class: "checking" }, "Checking this authority…"),
+      done ? el("p", {}, c.explanation) : null,
+      done && c.scope_note ? el("p", { class: "note" }, c.scope_note) : null,
+      done && evidence.excerpt ? el("details", {}, el("summary", {}, "Passage from the case this was checked against"), el("blockquote", {}, evidence.excerpt)) : null,
+      done && evidence.source && evidence.source !== "Local case-law dataset" ? el("p", { class: "note" }, "Source: ", safeLink(evidence.source)) : null);
+  }));
+}
+
+/* ---------------- selection, sorting, download ---------------- */
+
+function select(id, { scrollCard = false, scrollDoc = false } = {}) {
+  state.selectedId = id;
+  document.querySelectorAll(".selected").forEach((n) => n.classList.remove("selected"));
+  document.querySelectorAll(`mark.cite[data-id="${id}"], .card[data-id="${id}"]`).forEach((n) => n.classList.add("selected"));
+  if (scrollCard) $(`#card-${id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (scrollDoc) document.querySelector(`mark.cite[data-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+$("#doc").addEventListener("click", (e) => {
+  const mark = e.target.closest("mark.cite");
+  if (mark) select(Number(mark.dataset.id), { scrollCard: true });
+});
+$("#doc").addEventListener("keydown", (e) => {
+  const mark = e.target.closest("mark.cite");
+  if (mark && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(Number(mark.dataset.id), { scrollCard: true }); }
+});
+$("#cards").addEventListener("click", (e) => {
+  const top = e.target.closest("[data-select]");
+  if (top) select(Number(top.dataset.select), { scrollDoc: true });
+});
+
+function setSort(mode) {
+  state.sort = mode;
+  $("#sort-flagged").setAttribute("aria-pressed", String(mode === "flagged"));
+  $("#sort-order").setAttribute("aria-pressed", String(mode === "order"));
+  if (state.job) renderCards(state.job);
+}
+$("#sort-flagged").addEventListener("click", () => setSort("flagged"));
+$("#sort-order").addEventListener("click", () => setSort("order"));
+
+$("#download-btn").addEventListener("click", () => {
+  if (!state.job) return;
+  const { text, citations, summary, warnings } = state.job;
+  const blob = new Blob([JSON.stringify({ summary, warnings, citations, text }, null, 2)], { type: "application/json" });
+  const link = el("a", { href: URL.createObjectURL(blob), download: "citation-report.json" });
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+
+/* ---------------- server status ---------------- */
+
+(async function loadServerInfo() {
+  try {
+    const info = await (await fetch(`${API}/api/health`)).json();
+    $("#footer-corpus").textContent = `Checked against ${info.corpus_documents} case-law files`;
+    $("#fineprint").textContent =
+      `PDF, Word or text files up to ${info.limits.max_upload_mb} MB, or up to ${info.limits.max_text_chars.toLocaleString()} characters of text. ` +
+      "Short excerpts around each citation are sent to Perplexity to be checked, so don't use confidential documents.";
+    if (!info.verification_configured) {
+      const banner = $("#server-banner");
+      banner.textContent = "This server has no Perplexity API key configured, so citations can't be checked yet.";
+      banner.hidden = false;
+    }
+  } catch { /* the page still works if health can't be read; errors surface on submit */ }
+})();
+</script>
+</body>
+</html>

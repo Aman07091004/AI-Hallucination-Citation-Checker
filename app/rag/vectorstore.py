@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import chromadb
+from rank_bm25 import BM25Okapi
 
 from app import config
 from app.ingestion.loader import load_document
@@ -15,7 +16,13 @@ _client: chromadb.ClientAPI | None = None
 def get_client() -> chromadb.ClientAPI:
     global _client
     if _client is None:
-        _client = chromadb.PersistentClient(path=str(config.VECTOR_DB_DIR))
+        # anonymized_telemetry=False avoids a known noisy (but harmless)
+        # compatibility warning between chromadb and its telemetry library -
+        # not a functional issue, just console noise we don't need.
+        _client = chromadb.PersistentClient(
+            path=str(config.VECTOR_DB_DIR),
+            settings=chromadb.Settings(anonymized_telemetry=False),
+        )
     return _client
 
 
@@ -68,8 +75,66 @@ def query_case(file_path: Path, query_text: str, top_k: int = 3) -> list[dict]:
     return hits
 
 
+def hybrid_query_case(
+    file_path: Path, query_text: str, top_k: int = 4, embedding_weight: float = 0.6
+) -> list[dict]:
+    """Combines semantic (embedding) search with BM25 (keyword/lexical)
+    search over one case's chunks, then blends the two scores.
+
+    Why this matters: pure embedding search on real output showed a real
+    weakness - for OBG v Allan, it surfaced passages about earlier judges'
+    commentary instead of the actual holding the brief was citing, and
+    scores across the board were mediocre (0.47-0.66). Embeddings are good
+    at "similar meaning" but can miss passages that share exact legal
+    terminology with the query but are phrased differently overall. BM25
+    is the opposite: strong at exact/near-exact term overlap, weak at
+    paraphrase. Combining them is standard practice in production RAG
+    systems for exactly this reason - each covers the other's blind spot.
+    """
+    collection = get_collection()
+    all_chunks = collection.get(where={"source_file": str(file_path)}, include=["documents"])
+    documents = all_chunks["documents"]
+    if not documents:
+        return []
+
+    # --- BM25 (lexical) scoring ---
+    tokenized_corpus = [d.lower().split() for d in documents]
+    bm25 = BM25Okapi(tokenized_corpus)
+    bm25_scores = bm25.get_scores(query_text.lower().split())
+    max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
+    normalized_bm25 = [score / max_bm25 for score in bm25_scores]
+
+    # --- Embedding (semantic) scoring, over the same full set of chunks ---
+    query_embedding = embed_texts([query_text])[0]
+    emb_results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=len(documents),
+        where={"source_file": str(file_path)},
+    )
+    doc_to_similarity = {
+        doc: 1 - dist for doc, dist in zip(emb_results["documents"][0], emb_results["distances"][0])
+    }
+
+    # --- Blend and rank ---
+    combined = []
+    for doc, bm25_norm in zip(documents, normalized_bm25):
+        semantic_score = doc_to_similarity.get(doc, 0.0)
+        blended = embedding_weight * semantic_score + (1 - embedding_weight) * bm25_norm
+        combined.append(
+            {"text": doc, "blended_score": blended, "semantic_score": semantic_score, "bm25_score": bm25_norm}
+        )
+
+    combined.sort(key=lambda hit: hit["blended_score"], reverse=True)
+    return combined[:top_k]
+
+
 if __name__ == "__main__":
-    from app.ingestion.citations import dedupe_citations, extract_citations, get_citation_context
+    from app.ingestion.citations import (
+        dedupe_citations,
+        extract_citations,
+        get_citation_context,
+        strip_self_reference,
+    )
     from app.rag.corpus_index import build_registry, find_case_in_corpus
 
     brief_path = config.RAW_CORPUS_DIR / "White and Case.pdf"
@@ -88,9 +153,14 @@ if __name__ == "__main__":
         print(f"\n=== {c.case_name} ({c.citation}) - {cache_note} ===")
 
         claimed_context = get_citation_context(brief_doc.text, c.char_offset)
+        query_text = strip_self_reference(claimed_context, c.case_name, c.citation)
         print(f"Brief claims: \"{claimed_context}\"")
+        print(f"Query (self-reference stripped): \"{query_text}\"")
 
-        top_hits = query_case(match.matched_file, claimed_context, top_k=2)
+        top_hits = hybrid_query_case(match.matched_file, query_text, top_k=3)
         for i, hit in enumerate(top_hits, 1):
-            print(f"  Retrieved passage {i} (similarity {hit['similarity']:.3f}):")
+            print(
+                f"  Passage {i} - blended {hit['blended_score']:.3f} "
+                f"(semantic {hit['semantic_score']:.3f}, bm25 {hit['bm25_score']:.3f}):"
+            )
             print(f"    {hit['text'][:220]}...")

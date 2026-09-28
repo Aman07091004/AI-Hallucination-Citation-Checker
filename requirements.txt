@@ -1,7 +1,38 @@
-python-dotenv==1.2.3
-python-docx==1.2.0
-pymupdf==1.28.2
-pdfplumber==0.11.10
-pytesseract==0.3.13
+# --- Core API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+python-dotenv==1.0.1
+python-multipart==0.0.20  # required by FastAPI for File(...)/UploadFile form parsing
+
+# --- PDF / document handling ---
+pdfplumber==0.11.4       # text-layer PDF extraction
+pymupdf==1.25.1          # fast PDF rendering -> images (needed for OCR pages)
+python-docx==1.1.2       # for the .docx files in the corpus (meretz, starbucks)
+pillow==11.0.0
+
+# --- OCR ---
+pytesseract==0.3.13      # wraps the Tesseract binary you installed via winget
+
+# --- RAG / embeddings ---
+sentence-transformers==3.3.1
+chromadb==0.5.23          # local, file-based vector store - zero infra for now
+rank-bm25==0.2.2          # classic BM25 for hybrid search
+
+# --- Classical ML baseline ---
+scikit-learn==1.6.0
+pandas==2.2.3
+numpy==2.2.1
+
+# --- DB (used from week 2 onward, harmless to install now) ---
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+
+# --- External API calls ---
 httpx==0.28.1
-rapidfuzz==3.11.0 
+rapidfuzz==3.11.0        # fuzzy matching extracted case names against corpus filenames
+
+# --- Dev tooling ---
+pytest==8.3.4
+ruff==0.8.4
+ipykernel==6.29.5
