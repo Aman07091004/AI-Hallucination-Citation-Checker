@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: citation-integrity-checker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PERPLEXITY_API_KEY
+        sync: false
+      - key: COURTLISTENER_API_TOKEN
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://aman07091004.github.io
